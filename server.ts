@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, Type } from '@google/genai';
+import { generateDomainSchemaSolution } from './src/utils/domainSchemaGenerator';
 
 dotenv.config();
 
@@ -15,17 +16,66 @@ const PORT = 3000;
 
 app.use(express.json({ limit: '10mb' }));
 
-// Initialize Google GenAI SDK (server-side only, never exposed to client)
-let ai: GoogleGenAI | null = null;
-if (process.env.GEMINI_API_KEY) {
-  ai = new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY,
-    httpOptions: {
-      headers: {
-        'User-Agent': 'aistudio-build',
-      },
-    },
-  });
+// Helper to sanitize and normalize AI-generated schema into RelationalCanvas SchemaModel
+function normalizeAISchema(rawSchema: any, fallbackSchema: any) {
+  if (!rawSchema || typeof rawSchema !== 'object') return fallbackSchema;
+
+  const tables = Array.isArray(rawSchema.tables) && rawSchema.tables.length > 0 ? rawSchema.tables.map((t: any, idx: number) => {
+    const tableId = t.id || `tbl_${t.name || idx}_${Date.now()}`;
+    const xPos = t.position?.x ?? t.x ?? (60 + (idx % 3) * 340);
+    const yPos = t.position?.y ?? t.y ?? (60 + Math.floor(idx / 3) * 300);
+
+    const cols = Array.isArray(t.columns) ? t.columns.map((c: any, cIdx: number) => ({
+      id: c.id || `col_${c.name || cIdx}_${tableId}`,
+      name: c.name || `col_${cIdx + 1}`,
+      type: c.type || 'varchar(255)',
+      isPrimaryKey: Boolean(c.isPrimaryKey || c.primaryKey || c.pk),
+      isForeignKey: Boolean(c.isForeignKey || c.foreignKey || c.fk),
+      isNullable: c.isNullable ?? c.nullable ?? true,
+      isUnique: Boolean(c.isUnique || c.unique || c.isPrimaryKey),
+      isIndexed: Boolean(c.isIndexed || c.indexed || c.isPrimaryKey || c.isForeignKey),
+      defaultValue: c.defaultValue || c.default,
+      references: c.references,
+    })) : [];
+
+    return {
+      id: tableId,
+      name: t.name || `table_${idx + 1}`,
+      position: { x: xPos, y: yPos },
+      colorHeader: t.colorHeader || (['#3B82F6', '#06B6D4', '#10B981', '#8B5CF6', '#EC4899', '#F59E0B'][idx % 6]),
+      columns: cols,
+    };
+  }) : fallbackSchema.tables;
+
+  const relationships = Array.isArray(rawSchema.relationships) ? rawSchema.relationships.map((r: any, rIdx: number) => {
+    let srcTbl = tables.find((t: any) => t.id === r.sourceTableId || t.name === r.source || t.name === r.sourceTableId);
+    let tgtTbl = tables.find((t: any) => t.id === r.targetTableId || t.name === r.target || t.name === r.targetTableId);
+
+    const srcCol = srcTbl?.columns?.find((c: any) => c.id === r.sourceColumnId || c.name === r.sourceColumn || c.isForeignKey) || srcTbl?.columns?.[0];
+    const tgtCol = tgtTbl?.columns?.find((c: any) => c.id === r.targetColumnId || c.name === r.targetColumn || c.isPrimaryKey) || tgtTbl?.columns?.[0];
+
+    return {
+      id: r.id || `rel_${rIdx}_${Date.now()}`,
+      sourceTableId: srcTbl?.id || r.sourceTableId,
+      sourceColumnId: srcCol?.id || r.sourceColumnId,
+      targetTableId: tgtTbl?.id || r.targetTableId,
+      targetColumnId: tgtCol?.id || r.targetColumnId,
+      cardinality: r.cardinality || '1:N',
+      sourceEnd: r.sourceEnd || (r.cardinality === '1:1' ? 'one' : 'crows-foot'),
+      targetEnd: r.targetEnd || (r.cardinality === 'N:M' ? 'crows-foot' : 'one'),
+      name: r.name || `fk_${srcTbl?.name}_${tgtTbl?.name}`,
+      onDelete: r.onDelete || 'CASCADE',
+      onUpdate: r.onUpdate || 'CASCADE',
+    };
+  }) : fallbackSchema.relationships;
+
+  return {
+    ...fallbackSchema,
+    ...rawSchema,
+    tables,
+    relationships,
+    updatedAt: Date.now(),
+  };
 }
 
 // POST /api/gemini/assist
@@ -104,39 +154,52 @@ Please return JSON with:
 - "updatedSchema": the complete SchemaModel object (or current schema if purely advisory)
 - "sqlPreview": optional DDL snippet for the changes (or empty string if advisory)`;
 
-      const response = await client.models.generateContent({
-        model: modelName,
-        contents,
-        config: {
-          systemInstruction,
-          responseMimeType: 'application/json',
-          temperature: 0.3,
-        },
-      });
+      const candidateModels = [
+        modelName,
+        'gemini-flash-latest',
+        'gemini-3.1-flash-lite',
+        'gemini-3.8-flash'
+      ].filter((v, i, a) => a.indexOf(v) === i);
 
-      const responseText = response.text || '';
-      try {
-        const parsed = JSON.parse(responseText);
-        return res.json(parsed);
-      } catch (jsonErr) {
-        return res.json({
-          explanation: responseText,
-          summary: 'Schema reasoning complete',
-          updatedSchema: schema,
-        });
+      let responseText = '';
+      for (const candidate of candidateModels) {
+        try {
+          const response = await client.models.generateContent({
+            model: candidate,
+            contents,
+            config: {
+              systemInstruction,
+              responseMimeType: 'application/json',
+              temperature: 0.3,
+            },
+          });
+          if (response && response.text) {
+            responseText = response.text;
+            break;
+          }
+        } catch (modelErr: any) {
+          console.warn(`Model ${candidate} attempt error:`, modelErr?.message || modelErr);
+        }
+      }
+
+      if (responseText) {
+        try {
+          const parsed = JSON.parse(responseText);
+          const normalized = normalizeAISchema(parsed.updatedSchema, schema);
+          return res.json({
+            explanation: parsed.explanation || 'I have analyzed your request and prepared the schema modifications below.',
+            summary: parsed.summary || 'Proposed Schema Architecture',
+            updatedSchema: normalized,
+            sqlPreview: parsed.sqlPreview || '',
+          });
+        } catch (jsonErr) {
+          console.warn('Could not parse Gemini JSON response, adapting text:', jsonErr);
+        }
       }
     } catch (aiErr: any) {
       console.error('Gemini API call error:', aiErr?.message || aiErr);
-      // Fall through to smart fallback
     }
   }
-
-  // Smart fallback response for standalone offline mode or missing API key
-  const updatedTables = [...(schema?.tables || [])];
-  const updatedRels = [...(schema?.relationships || [])];
-
-  let explanation = '';
-  let summary = '';
 
   // Check for advisory / informational design questions
   const isAdvisory = /difference|compare|vs|trade-?off|how to|what is|why|explain|which type|normalize|normalization|indexing|performance|best practice/i.test(lower);
@@ -176,87 +239,9 @@ Please return JSON with:
     });
   }
 
-  if (lower.includes('audit')) {
-    const auditTableId = `tbl_audit_${Date.now()}`;
-    updatedTables.push({
-      id: auditTableId,
-      name: 'audit_logs',
-      position: { x: 50, y: (updatedTables.length > 0 ? Math.max(...updatedTables.map((t: any) => t.position.y)) + 300 : 500) },
-      colorHeader: '#F59E0B',
-      columns: [
-        { id: `c_aud_1`, name: 'id', type: schema?.dialect === 'mssql' ? 'bigint IDENTITY(1,1)' : 'bigserial', isPrimaryKey: true, isForeignKey: false, isNullable: false, isUnique: true },
-        { id: `c_aud_2`, name: 'table_name', type: schema?.dialect === 'mssql' ? 'nvarchar(100)' : 'varchar(100)', isPrimaryKey: false, isForeignKey: false, isNullable: false, isUnique: false },
-        { id: `c_aud_3`, name: 'action', type: schema?.dialect === 'mssql' ? 'nvarchar(50)' : 'varchar(50)', isPrimaryKey: false, isForeignKey: false, isNullable: false, isUnique: false },
-        { id: `c_aud_4`, name: 'record_id', type: schema?.dialect === 'mssql' ? 'nvarchar(128)' : 'varchar(128)', isPrimaryKey: false, isForeignKey: false, isNullable: false, isUnique: false },
-        { id: `c_aud_5`, name: 'diff_json', type: schema?.dialect === 'mssql' ? 'nvarchar(max)' : schema?.dialect === 'postgres' ? 'jsonb' : 'text', isPrimaryKey: false, isForeignKey: false, isNullable: true, isUnique: false },
-        { id: `c_aud_6`, name: 'changed_at', type: schema?.dialect === 'mssql' ? 'datetime2' : 'timestamptz', isPrimaryKey: false, isForeignKey: false, isNullable: false, isUnique: false, defaultValue: schema?.dialect === 'mssql' ? 'SYSUTCDATETIME()' : 'NOW()' },
-      ],
-    });
-    explanation = 'Added a standardized `audit_logs` table tracking table name, action type (INSERT, UPDATE, DELETE), record ID, and payload diffs for complete governance.';
-    summary = 'Added audit_logs entity';
-  } else if (lower.includes('address')) {
-    const addrId = `tbl_address_${Date.now()}`;
-    const userTable = updatedTables.find((t: any) => t.name.toLowerCase().includes('user')) || updatedTables[0];
-    const userCol = userTable?.columns?.find((c: any) => c.isPrimaryKey) || userTable?.columns?.[0];
-
-    const foreignColId = `c_ad_user_id`;
-    updatedTables.push({
-      id: addrId,
-      name: 'addresses',
-      position: { x: (userTable ? userTable.position.x + 360 : 300), y: (userTable ? userTable.position.y : 300) },
-      colorHeader: '#06B6D4',
-      columns: [
-        { id: `c_ad_1`, name: 'id', type: schema?.dialect === 'mssql' ? 'uniqueidentifier' : 'uuid', isPrimaryKey: true, isForeignKey: false, isNullable: false, isUnique: true, defaultValue: schema?.dialect === 'mssql' ? 'NEWID()' : 'gen_random_uuid()' },
-        { id: foreignColId, name: userTable ? `${userTable.name}_id` : 'user_id', type: userCol ? userCol.type : 'uuid', isPrimaryKey: false, isForeignKey: true, isNullable: false, isUnique: false, references: userTable && userCol ? { targetTableId: userTable.id, targetColumnId: userCol.id, targetTableName: userTable.name, targetColumnName: userCol.name } : undefined },
-        { id: `c_ad_3`, name: 'street_line1', type: schema?.dialect === 'mssql' ? 'nvarchar(255)' : 'varchar(255)', isPrimaryKey: false, isForeignKey: false, isNullable: false, isUnique: false },
-        { id: `c_ad_4`, name: 'city', type: schema?.dialect === 'mssql' ? 'nvarchar(100)' : 'varchar(100)', isPrimaryKey: false, isForeignKey: false, isNullable: false, isUnique: false },
-        { id: `c_ad_5`, name: 'state_province', type: schema?.dialect === 'mssql' ? 'nvarchar(100)' : 'varchar(100)', isPrimaryKey: false, isForeignKey: false, isNullable: true, isUnique: false },
-        { id: `c_ad_6`, name: 'postal_code', type: schema?.dialect === 'mssql' ? 'nvarchar(20)' : 'varchar(20)', isPrimaryKey: false, isForeignKey: false, isNullable: false, isUnique: false },
-      ],
-    });
-
-    if (userTable && userCol) {
-      updatedRels.push({
-        id: `rel_${Date.now()}`,
-        sourceTableId: addrId,
-        sourceColumnId: foreignColId,
-        targetTableId: userTable.id,
-        targetColumnId: userCol.id,
-        cardinality: '1:N',
-        name: `fk_addresses_${userTable.name}`,
-      });
-    }
-    explanation = `Added \`addresses\` table with structured postal fields and linked via foreign key to \`${userTable?.name || 'parent'}\`.`;
-    summary = 'Added addresses entity with foreign key';
-  } else {
-    // General solution
-    const newTableId = `tbl_entity_${Date.now()}`;
-    updatedTables.push({
-      id: newTableId,
-      name: `custom_solution`,
-      position: { x: 400, y: 350 },
-      colorHeader: '#8B5CF6',
-      columns: [
-        { id: `col_1_${newTableId}`, name: 'id', type: schema?.dialect === 'mssql' ? 'uniqueidentifier' : 'uuid', isPrimaryKey: true, isForeignKey: false, isNullable: false, isUnique: true, defaultValue: schema?.dialect === 'mssql' ? 'NEWID()' : 'gen_random_uuid()' },
-        { id: `col_2_${newTableId}`, name: 'title', type: schema?.dialect === 'mssql' ? 'nvarchar(255)' : 'varchar(255)', isPrimaryKey: false, isForeignKey: false, isNullable: false, isUnique: false },
-        { id: `col_3_${newTableId}`, name: 'status', type: schema?.dialect === 'mssql' ? 'nvarchar(50)' : 'varchar(50)', isPrimaryKey: false, isForeignKey: false, isNullable: false, isUnique: false },
-        { id: `col_4_${newTableId}`, name: 'created_at', type: schema?.dialect === 'mssql' ? 'datetime2' : 'timestamptz', isPrimaryKey: false, isForeignKey: false, isNullable: false, isUnique: false },
-      ],
-    });
-    explanation = `Created a new entity based on your prompt: "${prompt}". You can modify columns or connect foreign keys directly on canvas.`;
-    summary = 'Custom Entity Created';
-  }
-
-  res.json({
-    explanation,
-    summary,
-    updatedSchema: {
-      ...schema,
-      tables: updatedTables,
-      relationships: updatedRels,
-      updatedAt: Date.now(),
-    },
-  });
+  // Full Domain Schema Solution Architect (produces complete multi-table normalized solutions)
+  const domainSolution = generateDomainSchemaSolution(prompt, schema);
+  return res.json(domainSolution);
 });
 
 async function startServer() {

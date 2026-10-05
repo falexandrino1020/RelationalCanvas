@@ -229,6 +229,27 @@ async function runTests() {
     testAssert(false, 'AI Chatbot Out-of-Scope request failed', err.message);
   }
 
+  // 3.4 AI Domain Schema Solution Generation (Animal Clinic)
+  try {
+    const resClinic = await fetch('http://localhost:3000/api/gemini/assist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: 'Create me a design and scheme for a animal clinic',
+        schema: { id: 'test_clean', name: 'Test', dialect: 'postgres', tables: [], relationships: [], createdAt: Date.now(), updatedAt: Date.now() },
+      }),
+    });
+    testAssert(resClinic.ok, 'AI Domain Solution: HTTP status 200 OK');
+    const dataClinic = await resClinic.json();
+    testAssert(dataClinic.updatedSchema.tables.length >= 3, 'AI Domain Solution: generated comprehensive multi-table schema (>=3 tables)');
+    const tableNames = dataClinic.updatedSchema.tables.map((t: any) => t.name.toLowerCase()).join(' ');
+    const hasClinicEntities = /owner|patient|pet|animal|vet|doctor|appointment|treatment/i.test(tableNames);
+    testAssert(hasClinicEntities, 'AI Domain Solution: includes relevant domain entities (owners, animals/patients, appointments/vets)');
+    testAssert(dataClinic.updatedSchema.tables[0].name !== 'custom_solution', 'AI Domain Solution: did not fallback to single generic custom_solution table');
+  } catch (err: any) {
+    testAssert(false, 'AI Domain Solution request failed', err.message);
+  }
+
   // --- PART 4: CANVAS MECHANICS & GRAPH LOGIC ---
   console.log('\n--- 4. Testing Canvas State & Graph Mechanics ---');
 
@@ -327,6 +348,15 @@ async function runTests() {
   const laidOutSchema = runAutoLayout(withRelationSchema);
   testAssert(laidOutSchema.tables[0].position.x !== undefined && laidOutSchema.tables[0].position.y !== undefined, 'Auto-Layout: computed valid 2D coordinates for table 1');
   testAssert(laidOutSchema.tables[1].position.x !== undefined && laidOutSchema.tables[1].position.y !== undefined, 'Auto-Layout: computed valid 2D coordinates for table 2');
+
+  // 4.6 Table Deletion & Orphaned Relationship Cleanup
+  const afterTableDeleteSchema: SchemaModel = {
+    ...withRelationSchema,
+    tables: withRelationSchema.tables.filter(t => t.id !== newChildTable.id),
+    relationships: withRelationSchema.relationships.filter(r => r.sourceTableId !== newChildTable.id && r.targetTableId !== newChildTable.id),
+  };
+  testAssert(afterTableDeleteSchema.tables.length === 1, 'Table Delete: table removed successfully without iframe confirm block');
+  testAssert(afterTableDeleteSchema.relationships.length === 0, 'Table Delete: connected relationships cleanly purged');
 
   // --- PART 5: SENIOR DATABASE ENGINEER STORAGE MATH & AUDIT ENGINE ---
   console.log('\n--- 5. Testing Storage Math & Senior DB Engineer Audit Engine ---');

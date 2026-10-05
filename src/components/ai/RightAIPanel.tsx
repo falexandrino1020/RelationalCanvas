@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { SchemaModel, AIChatMessage } from '../../types/schema';
+import { generateDomainSchemaSolution } from '../../utils/domainSchemaGenerator';
 import { Mic, MicOff, Send, Sparkles, X, Check, ArrowRight, CornerDownLeft, Bot, User, AlertCircle } from 'lucide-react';
 
 interface RightAIPanelProps {
@@ -412,82 +413,11 @@ I cannot assist with general software programming, server scripting, or non-data
     };
   }
 
-  // 3. Schema Mutations
-  const tables = [...currentSchema.tables];
-  const relationships = [...currentSchema.relationships];
-
-  if (lower.includes('audit')) {
-    const auditId = `tbl_audit_log_${Math.random().toString(36).substring(2, 6)}`;
-    const newTable = {
-      id: auditId,
-      name: 'audit_logs',
-      position: { x: 60, y: (tables.length > 0 ? Math.max(...tables.map(t => t.position.y)) + 280 : 300) },
-      colorHeader: '#F59E0B',
-      columns: [
-        { id: 'al_id', name: 'id', type: currentSchema.dialect === 'mssql' ? 'uniqueidentifier' : 'uuid', isPrimaryKey: true, isForeignKey: false, isNullable: false, isUnique: true, defaultValue: currentSchema.dialect === 'mssql' ? 'NEWID()' : 'gen_random_uuid()' },
-        { id: 'al_table', name: 'table_name', type: currentSchema.dialect === 'mssql' ? 'nvarchar(100)' : 'varchar(100)', isPrimaryKey: false, isForeignKey: false, isNullable: false, isUnique: false },
-        { id: 'al_action', name: 'action', type: currentSchema.dialect === 'mssql' ? 'nvarchar(50)' : 'varchar(50)', isPrimaryKey: false, isForeignKey: false, isNullable: false, isUnique: false },
-        { id: 'al_user', name: 'performed_by', type: currentSchema.dialect === 'mssql' ? 'nvarchar(120)' : 'varchar(120)', isPrimaryKey: false, isForeignKey: false, isNullable: true, isUnique: false },
-        { id: 'al_time', name: 'created_at', type: currentSchema.dialect === 'mssql' ? 'datetime2' : 'timestamptz', isPrimaryKey: false, isForeignKey: false, isNullable: false, isUnique: false, defaultValue: currentSchema.dialect === 'mssql' ? 'SYSUTCDATETIME()' : 'NOW()' },
-      ],
-    };
-    tables.push(newTable);
-    return {
-      explanation: 'Added an `audit_logs` entity tracking table changes, actions, user identifiers, and timestamps.',
-      summary: 'Added audit_logs entity',
-      updatedSchema: { ...currentSchema, tables, relationships, updatedAt: Date.now() },
-    };
-  } else if (lower.includes('address')) {
-    const addrId = `tbl_addresses_${Math.random().toString(36).substring(2, 6)}`;
-    const userTable = tables.find(t => t.name.toLowerCase().includes('user')) || tables[0];
-    const newTable = {
-      id: addrId,
-      name: 'addresses',
-      position: { x: (userTable?.position.x || 100) + 380, y: (userTable?.position.y || 100) },
-      colorHeader: '#06B6D4',
-      columns: [
-        { id: 'ad_id', name: 'id', type: currentSchema.dialect === 'mssql' ? 'uniqueidentifier' : 'uuid', isPrimaryKey: true, isForeignKey: false, isNullable: false, isUnique: true, defaultValue: currentSchema.dialect === 'mssql' ? 'NEWID()' : 'gen_random_uuid()' },
-        { id: 'ad_user_id', name: userTable ? `${userTable.name}_id` : 'user_id', type: currentSchema.dialect === 'mssql' ? 'uniqueidentifier' : 'uuid', isPrimaryKey: false, isForeignKey: true, isNullable: false, isUnique: false, references: userTable ? { targetTableId: userTable.id, targetColumnId: userTable.columns[0]?.id } : undefined },
-        { id: 'ad_street', name: 'street_address', type: currentSchema.dialect === 'mssql' ? 'nvarchar(255)' : 'varchar(255)', isPrimaryKey: false, isForeignKey: false, isNullable: false, isUnique: false },
-        { id: 'ad_city', name: 'city', type: currentSchema.dialect === 'mssql' ? 'nvarchar(100)' : 'varchar(100)', isPrimaryKey: false, isForeignKey: false, isNullable: false, isUnique: false },
-        { id: 'ad_zip', name: 'postal_code', type: currentSchema.dialect === 'mssql' ? 'nvarchar(20)' : 'varchar(20)', isPrimaryKey: false, isForeignKey: false, isNullable: false, isUnique: false },
-      ],
-    };
-    tables.push(newTable);
-    if (userTable && userTable.columns[0]) {
-      relationships.push({
-        id: `rel_addr_${Date.now()}`,
-        sourceTableId: addrId,
-        sourceColumnId: 'ad_user_id',
-        targetTableId: userTable.id,
-        targetColumnId: userTable.columns[0].id,
-        cardinality: '1:N',
-        name: `fk_addresses_${userTable.name}`,
-      });
-    }
-    return {
-      explanation: `Added \`addresses\` table linked via foreign key to \`${userTable?.name || 'parent'}\`.`,
-      summary: 'Added addresses entity with foreign key',
-      updatedSchema: { ...currentSchema, tables, relationships, updatedAt: Date.now() },
-    };
-  } else {
-    const newId = `tbl_entity_${Math.random().toString(36).substring(2, 6)}`;
-    const newTable = {
-      id: newId,
-      name: `entity_${tables.length + 1}`,
-      position: { x: 300, y: 300 },
-      colorHeader: '#8B5CF6',
-      columns: [
-        { id: 'cs_id', name: 'id', type: currentSchema.dialect === 'mssql' ? 'uniqueidentifier' : 'uuid', isPrimaryKey: true, isForeignKey: false, isNullable: false, isUnique: true, defaultValue: currentSchema.dialect === 'mssql' ? 'NEWID()' : 'gen_random_uuid()' },
-        { id: 'cs_name', name: 'name', type: currentSchema.dialect === 'mssql' ? 'nvarchar(255)' : 'varchar(255)', isPrimaryKey: false, isForeignKey: false, isNullable: false, isUnique: false },
-        { id: 'cs_date', name: 'created_at', type: currentSchema.dialect === 'mssql' ? 'datetime2' : 'timestamptz', isPrimaryKey: false, isForeignKey: false, isNullable: false, isUnique: false },
-      ],
-    };
-    tables.push(newTable);
-    return {
-      explanation: `Created new entity table for \`${prompt}\`.`,
-      summary: `Added entity_${tables.length}`,
-      updatedSchema: { ...currentSchema, tables, relationships, updatedAt: Date.now() },
-    };
-  }
+  // 3. Schema Mutations via Domain Schema Solution Generator
+  const domainSolution = generateDomainSchemaSolution(prompt, currentSchema);
+  return {
+    explanation: domainSolution.explanation,
+    summary: domainSolution.summary,
+    updatedSchema: domainSolution.updatedSchema,
+  };
 }

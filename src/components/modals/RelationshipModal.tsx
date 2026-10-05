@@ -37,6 +37,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
   const [name, setName] = useState<string>('');
   const [onDeleteAction, setOnDeleteAction] = useState<'CASCADE' | 'SET NULL' | 'RESTRICT' | 'NO ACTION'>('NO ACTION');
   const [onUpdateAction, setOnUpdateAction] = useState<'CASCADE' | 'SET NULL' | 'RESTRICT' | 'NO ACTION'>('NO ACTION');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Initialize or reset form when modal opens or relationship changes
   useEffect(() => {
@@ -583,19 +584,37 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         <div className="px-6 py-4 border-t border-slate-800 flex items-center justify-between bg-slate-900/60">
           <div>
             {isEditing && onDelete && relationship && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (confirm(`Delete relationship "${relationship.name || 'fk'}"?`)) {
-                    onDelete(relationship.id);
-                    onClose();
-                  }
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-semibold transition-colors"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Delete Relation</span>
-              </button>
+              showDeleteConfirm ? (
+                <div className="flex items-center gap-1.5 bg-rose-950/80 border border-rose-600/70 rounded-lg p-1">
+                  <span className="text-xs text-rose-300 font-semibold px-1">Delete relationship?</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onDelete(relationship.id);
+                      onClose();
+                    }}
+                    className="px-2 py-1 rounded bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold transition-colors"
+                  >
+                    Confirm
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteConfirm(false)}
+                    className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-semibold transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete Relation</span>
+                </button>
+              )
             )}
           </div>
 

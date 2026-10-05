@@ -373,22 +373,29 @@ export const ERDCanvas: React.FC<ERDCanvasProps> = ({
   };
 
   const handleUpdateTable = (updatedTable: Table) => {
+    // Clean up any relationships if columns were removed
+    const validColIds = new Set(updatedTable.columns.map(c => c.id));
+    const cleanedRelationships = schema.relationships.filter(r => {
+      if (r.sourceTableId === updatedTable.id && !validColIds.has(r.sourceColumnId)) return false;
+      if (r.targetTableId === updatedTable.id && !validColIds.has(r.targetColumnId)) return false;
+      return true;
+    });
+
     onUpdateSchema({
       ...schema,
       tables: schema.tables.map(t => t.id === updatedTable.id ? updatedTable : t),
+      relationships: cleanedRelationships,
     });
   };
 
   const handleDeleteTable = (tableId: string) => {
-    if (confirm('Delete this table and all connected foreign key relationships?')) {
-      onUpdateSchema({
-        ...schema,
-        tables: schema.tables.filter(t => t.id !== tableId),
-        relationships: schema.relationships.filter(r => r.sourceTableId !== tableId && r.targetTableId !== tableId),
-      });
-      if (selectedTableId === tableId) {
-        onSelectTable(null);
-      }
+    onUpdateSchema({
+      ...schema,
+      tables: schema.tables.filter(t => t.id !== tableId),
+      relationships: schema.relationships.filter(r => r.sourceTableId !== tableId && r.targetTableId !== tableId),
+    });
+    if (selectedTableId === tableId) {
+      onSelectTable(null);
     }
   };
 

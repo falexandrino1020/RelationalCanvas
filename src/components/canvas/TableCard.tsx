@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Column, SupportedDialect, Table } from '../../types/schema';
 import { DIALECT_TYPES, COMMON_COLORS } from '../../utils/typeSystem';
 import { calculateTableStorage } from '../../utils/storageMath';
-import { Key, Link2, Plus, Trash2, MoreHorizontal, Check, Edit2, Palette } from 'lucide-react';
+import { Key, Link2, Plus, Trash2, MoreHorizontal, Check, Edit2, Palette, X } from 'lucide-react';
 
 interface TableCardProps {
   table: Table;
@@ -37,6 +37,7 @@ export const TableCard: React.FC<TableCardProps> = ({
   const [editingColId, setEditingColId] = useState<string | null>(null);
   const [editingColName, setEditingColName] = useState('');
   const [showColorPicker, setShowColorPicker] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
     setTableName(table.name);
@@ -167,13 +168,42 @@ export const TableCard: React.FC<TableCardProps> = ({
             <Plus className="w-3.5 h-3.5" />
           </button>
 
-          <button
-            onClick={() => onDeleteTable(table.id)}
-            className="p-1 rounded text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition-colors"
-            title="Delete Table"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
+          {showDeleteConfirm ? (
+            <div className="flex items-center gap-1 bg-rose-950/90 border border-rose-600/70 rounded px-1.5 py-0.5 animate-in fade-in duration-100 z-30">
+              <span className="text-[10px] text-rose-300 font-semibold font-mono">Del?</span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteTable(table.id);
+                }}
+                className="p-0.5 rounded text-rose-200 hover:text-white hover:bg-rose-600 transition-colors"
+                title="Confirm Delete Table"
+              >
+                <Check className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowDeleteConfirm(false);
+                }}
+                className="p-0.5 rounded text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
+                title="Cancel"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowDeleteConfirm(true);
+              }}
+              className="p-1 rounded text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition-colors"
+              title="Delete Table"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
 
