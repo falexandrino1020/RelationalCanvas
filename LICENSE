@@ -1,21 +1,77 @@
-MIT License
+RelationalCanvas Source License
 
 Copyright (c) 2026 RelationalCanvas Contributors
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Permission is granted to view, use, modify, and contribute to the source code
+of RelationalCanvas subject to the terms below.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. CONTRIBUTIONS
+
+Contributions to RelationalCanvas are permitted and encouraged.
+
+By submitting a contribution, you grant the RelationalCanvas project and its
+maintainers a perpetual, worldwide, royalty-free license to use, modify,
+reproduce, distribute, and incorporate your contribution into the project.
+
+2. PERSONAL AND DEVELOPMENT USE
+
+You may download, run, and modify the Software for personal, educational,
+testing, evaluation, and development purposes.
+
+3. NO REDISTRIBUTION
+
+You may not distribute, publish, sublicense, mirror, host, sell, provide,
+transfer, or otherwise make copies or modified versions of the Software
+available to third parties without prior written permission from the
+RelationalCanvas project owner.
+
+This includes distributing forks, compiled versions, packaged versions,
+derivative works, or substantially similar versions of the Software.
+
+4. NO COMMERCIAL USE
+
+You may not use the Software, or any substantial portion of it, for commercial
+purposes without prior written permission from the RelationalCanvas project
+owner.
+
+Commercial purposes include, but are not limited to:
+
+- Selling the Software or a modified version of it.
+- Charging for access to the Software.
+- Offering the Software as a paid hosted service.
+- Including the Software in a commercial product or service.
+- Licensing or sublicensing the Software for financial gain.
+
+5. CONTRIBUTING
+
+You may fork the repository when reasonably necessary to prepare and submit
+contributions to the official RelationalCanvas project.
+
+Forks created for contribution purposes may not be separately promoted,
+distributed, sold, or operated as an independent competing product or service.
+
+6. OWNERSHIP
+
+Except for the rights expressly granted by this license, all rights in the
+Software are reserved by their respective copyright holders.
+
+Contributors retain copyright in their individual contributions unless
+otherwise agreed in writing.
+
+7. TERMINATION
+
+Any violation of this license automatically terminates the rights granted to
+you under this license.
+
+Upon termination, you must stop using and distributing any copies or
+derivative works of the Software.
+
+8. DISCLAIMER
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+
+IN NO EVENT SHALL THE AUTHORS, COPYRIGHT HOLDERS, OR CONTRIBUTORS BE LIABLE
+FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM, OUT OF, OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OF THE SOFTWARE.
