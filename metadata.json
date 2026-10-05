@@ -1,0 +1,6 @@
+{
+  "name": "RelationalCanvas",
+  "description": "AI-powered bi-directional SQL & ERD visual workbench supporting PostgreSQL, MySQL, MSSQL, SQLite, DBML, and Mermaid with interactive drag-and-drop canvas and voice collaboration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
