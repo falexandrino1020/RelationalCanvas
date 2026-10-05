@@ -58,6 +58,13 @@ export function generatePostgres(schema: SchemaModel): string {
     }
 
     output += lines.join(',\n') + '\n);\n\n';
+
+    // Explicit non-PK indexes
+    const indexedCols = table.columns.filter(c => c.isIndexed && !c.isPrimaryKey && !c.isUnique);
+    for (const col of indexedCols) {
+      output += `CREATE INDEX IF NOT EXISTS "idx_${table.name}_${col.name}" ON "${table.name}" ("${col.name}");\n`;
+    }
+    if (indexedCols.length > 0) output += '\n';
   }
 
   return output;
@@ -103,6 +110,12 @@ export function generateMSSQL(schema: SchemaModel): string {
     }
 
     output += lines.join(',\n') + '\n);\nGO\n\n';
+
+    // Explicit non-PK indexes
+    const indexedCols = table.columns.filter(c => c.isIndexed && !c.isPrimaryKey && !c.isUnique);
+    for (const col of indexedCols) {
+      output += `CREATE NONCLUSTERED INDEX [IX_${table.name}_${col.name}] ON [dbo].[${table.name}] ([${col.name}]);\nGO\n\n`;
+    }
   }
 
   // Generate foreign key constraints separately for T-SQL best practice
@@ -177,6 +190,13 @@ export function generateMySQL(schema: SchemaModel): string {
     }
 
     output += lines.join(',\n') + '\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;\n\n';
+
+    // Explicit non-PK indexes
+    const indexedCols = table.columns.filter(c => c.isIndexed && !c.isPrimaryKey && !c.isUnique);
+    for (const col of indexedCols) {
+      output += `CREATE INDEX \`idx_${table.name}_${col.name}\` ON \`${table.name}\` (\`${col.name}\`);\n`;
+    }
+    if (indexedCols.length > 0) output += '\n';
   }
 
   return output;
@@ -226,6 +246,13 @@ export function generateSQLite(schema: SchemaModel): string {
     }
 
     output += lines.join(',\n') + '\n);\n\n';
+
+    // Explicit non-PK indexes
+    const indexedCols = table.columns.filter(c => c.isIndexed && !c.isPrimaryKey && !c.isUnique);
+    for (const col of indexedCols) {
+      output += `CREATE INDEX IF NOT EXISTS "idx_${table.name}_${col.name}" ON "${table.name}" ("${col.name}");\n`;
+    }
+    if (indexedCols.length > 0) output += '\n';
   }
 
   return output;
@@ -261,7 +288,11 @@ export function generateDBML(schema: SchemaModel): string {
       const tgtCol = tgtTable?.columns.find(c => c.id === rel.targetColumnId);
 
       if (srcTable && srcCol && tgtTable && tgtCol) {
-        const symbol = rel.cardinality === '1:1' ? '-' : '>';
+        let symbol = '>';
+        if (rel.cardinality === '1:1') symbol = '-';
+        else if (rel.cardinality === 'N:M') symbol = '<>';
+        else if (rel.cardinality === 'N:1') symbol = '<';
+
         output += `Ref: ${srcTable.name}.${srcCol.name} ${symbol} ${tgtTable.name}.${tgtCol.name}\n`;
       }
     }
@@ -279,7 +310,11 @@ export function generateMermaid(schema: SchemaModel): string {
     const tgtTable = schema.tables.find(t => t.id === rel.targetTableId);
 
     if (srcTable && tgtTable) {
-      const marker = rel.cardinality === '1:1' ? '||--||' : '||--o{';
+      let marker = '||--o{';
+      if (rel.cardinality === '1:1') marker = '||--||';
+      else if (rel.cardinality === 'N:M') marker = '}o--o{';
+      else if (rel.cardinality === 'N:1') marker = '}o--||';
+
       output += `    ${tgtTable.name} ${marker} ${srcTable.name} : "references"\n`;
     }
   }

@@ -1,6 +1,6 @@
 import React from 'react';
 import { SchemaModel, SupportedDialect } from '../../types/schema';
-import { Database, Download, Upload, Sparkles, FolderOpen, RefreshCw, CheckCircle2, HelpCircle } from 'lucide-react';
+import { Database, Download, Upload, Sparkles, FolderOpen, RefreshCw, CheckCircle2, HelpCircle, ShieldCheck } from 'lucide-react';
 
 interface TopBarProps {
   schema: SchemaModel;
@@ -9,6 +9,9 @@ interface TopBarProps {
   onOpenExport: () => void;
   onOpenTemplates: () => void;
   onOpenWelcome?: () => void;
+  onOpenHealthDrawer: () => void;
+  healthScore?: number;
+  auditIssueCount?: number;
   aiPanelOpen: boolean;
   onToggleAIPanel: () => void;
   lastSavedTime: number;
@@ -21,6 +24,9 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenExport,
   onOpenTemplates,
   onOpenWelcome,
+  onOpenHealthDrawer,
+  healthScore = 100,
+  auditIssueCount = 0,
   aiPanelOpen,
   onToggleAIPanel,
   lastSavedTime,
@@ -104,6 +110,27 @@ export const TopBar: React.FC<TopBarProps> = ({
         </button>
 
         <div className="h-4 w-px bg-slate-800 mx-1 hidden sm:block" />
+
+        {/* Schema Health & Engineering Audit Trigger */}
+        <button
+          onClick={onOpenHealthDrawer}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg border transition-all ${
+            healthScore >= 90
+              ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/20'
+              : healthScore >= 70
+              ? 'bg-amber-500/10 text-amber-300 border-amber-500/30 hover:bg-amber-500/20'
+              : 'bg-rose-500/10 text-rose-300 border-rose-500/30 hover:bg-rose-500/20'
+          }`}
+          title="Open Schema Health & Senior Database Engineering Audit"
+        >
+          <ShieldCheck className="w-3.5 h-3.5" />
+          <span>{healthScore}% Health</span>
+          {auditIssueCount > 0 && (
+            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold bg-white/10">
+              {auditIssueCount}
+            </span>
+          )}
+        </button>
 
         {/* AI Co-Pilot Toggle */}
         <button

@@ -1,7 +1,7 @@
 /**
  * RelationalCanvas - Main Application Component
  */
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { SchemaModel, SupportedDialect, Table } from './types/schema';
 import { SAMPLE_SCHEMAS } from './utils/sampleSchemas';
 import { TopBar } from './components/layout/TopBar';
@@ -12,6 +12,8 @@ import { ImportModal } from './components/modals/ImportModal';
 import { ExportModal } from './components/modals/ExportModal';
 import { TemplatesModal } from './components/modals/TemplatesModal';
 import { WelcomeModal } from './components/modals/WelcomeModal';
+import { SchemaHealthDrawer } from './components/audit/SchemaHealthDrawer';
+import { runSchemaAudit } from './utils/schemaAudit';
 import { normalizeType } from './utils/typeSystem';
 
 const STORAGE_KEY = 'relational_canvas_active_schema';
@@ -46,6 +48,10 @@ export default function App() {
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [explorerOpen, setExplorerOpen] = useState(true);
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
+  const [healthDrawerOpen, setHealthDrawerOpen] = useState(false);
+
+  // Senior Database Engineering Audit Report & Storage calculations
+  const auditReport = useMemo(() => runSchemaAudit(schema), [schema]);
 
   // Modals
   const [importModalOpen, setImportModalOpen] = useState(false);
@@ -159,6 +165,9 @@ export default function App() {
         onOpenExport={() => setExportModalOpen(true)}
         onOpenTemplates={() => setTemplatesModalOpen(true)}
         onOpenWelcome={() => setWelcomeModalOpen(true)}
+        onOpenHealthDrawer={() => setHealthDrawerOpen(true)}
+        healthScore={auditReport.score}
+        auditIssueCount={auditReport.issues.length}
         aiPanelOpen={aiPanelOpen}
         onToggleAIPanel={() => setAiPanelOpen(!aiPanelOpen)}
         lastSavedTime={lastSavedTime}
@@ -196,6 +205,14 @@ export default function App() {
           onClose={() => setAiPanelOpen(false)}
         />
       </div>
+
+      {/* Senior Database Engineering Audit & Storage Drawer */}
+      <SchemaHealthDrawer
+        isOpen={healthDrawerOpen}
+        onClose={() => setHealthDrawerOpen(false)}
+        schema={schema}
+        onUpdateSchema={setSchema}
+      />
 
       {/* Modals */}
       <WelcomeModal

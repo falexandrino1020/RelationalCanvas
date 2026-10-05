@@ -1,6 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Column, SupportedDialect, Table } from '../../types/schema';
 import { DIALECT_TYPES, COMMON_COLORS } from '../../utils/typeSystem';
+import { calculateTableStorage } from '../../utils/storageMath';
 import { Key, Link2, Plus, Trash2, MoreHorizontal, Check, Edit2, Palette } from 'lucide-react';
 
 interface TableCardProps {
@@ -14,6 +15,7 @@ interface TableCardProps {
   onStartConnection: (tableId: string, columnId: string, e: React.MouseEvent) => void;
   onCompleteConnection: (tableId: string, columnId: string) => void;
   onDragStart: (tableId: string, e: React.MouseEvent) => void;
+  onEditColumnRelationship?: (tableId: string, columnId: string) => void;
 }
 
 export const TableCard: React.FC<TableCardProps> = ({
@@ -27,6 +29,7 @@ export const TableCard: React.FC<TableCardProps> = ({
   onStartConnection,
   onCompleteConnection,
   onDragStart,
+  onEditColumnRelationship,
 }) => {
   const [isEditingName, setIsEditingName] = useState(false);
   const [tableName, setTableName] = useState(table.name);
@@ -38,6 +41,8 @@ export const TableCard: React.FC<TableCardProps> = ({
   useEffect(() => {
     setTableName(table.name);
   }, [table.name]);
+
+  const storageMetrics = useMemo(() => calculateTableStorage(table, dialect), [table, dialect]);
 
   const handleSaveTableName = () => {
     if (tableName.trim() && tableName.trim() !== table.name) {
@@ -204,9 +209,17 @@ export const TableCard: React.FC<TableCardProps> = ({
                     <Key className="w-3 h-3" />
                   </span>
                 ) : col.isForeignKey ? (
-                  <span title="Foreign Key" className="text-cyan-400 shrink-0">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEditColumnRelationship?.(table.id, col.id);
+                    }}
+                    title="Foreign Key: Click to edit relationship & connection ends"
+                    className="text-cyan-400 hover:text-cyan-200 hover:scale-125 transition-transform shrink-0 cursor-pointer"
+                  >
                     <Link2 className="w-3 h-3" />
-                  </span>
+                  </button>
                 ) : (
                   <div className="w-3 h-3 shrink-0" />
                 )}
@@ -320,6 +333,18 @@ export const TableCard: React.FC<TableCardProps> = ({
                   {col.isNullable ? 'null' : 'NN'}
                 </button>
 
+                <button
+                  onClick={() => handleUpdateColumn(col.id, { isIndexed: !col.isIndexed })}
+                  className={`px-1 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                    col.isIndexed
+                      ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30'
+                      : 'text-slate-500 hover:text-slate-400'
+                  }`}
+                  title={col.isIndexed ? 'Indexed Column (click to remove index)' : 'Not Indexed (click to add B-tree index)'}
+                >
+                  IDX
+                </button>
+
                 {/* Delete Column Button */}
                 <button
                   onClick={() => handleDeleteColumn(col.id)}
@@ -346,12 +371,21 @@ export const TableCard: React.FC<TableCardProps> = ({
         )}
       </div>
 
-      {/* Footer Add Column Button */}
-      <div className="px-3 py-1.5 border-t border-slate-800/60 bg-slate-900/30 rounded-b-xl flex items-center justify-between text-[11px] text-slate-500">
-        <span>{table.columns.length} columns</span>
+      {/* Footer Add Column Button & Storage Density */}
+      <div className="px-3 py-1.5 border-t border-slate-800/60 bg-slate-900/30 rounded-b-xl flex items-center justify-between text-[11px] text-slate-500 font-mono">
+        <div className="flex items-center gap-1.5">
+          <span>{table.columns.length} cols</span>
+          <span>·</span>
+          <span
+            className={storageMetrics.exceedsPageLimit ? 'text-rose-400 font-bold' : 'text-slate-400'}
+            title={`Physical footprint: ~${storageMetrics.avgRowBytes}B average (${storageMetrics.minRowBytes}B min - ${storageMetrics.maxRowBytes}B max), ~${storageMetrics.rowsPer8KPage} rows per 8KB page`}
+          >
+            ~{storageMetrics.avgRowBytes} B/row
+          </span>
+        </div>
         <button
           onClick={handleAddColumn}
-          className="flex items-center gap-1 hover:text-indigo-400 transition-colors"
+          className="flex items-center gap-1 text-slate-400 hover:text-indigo-400 transition-colors font-sans"
         >
           <Plus className="w-3 h-3" /> Add Field
         </button>

@@ -20,6 +20,8 @@ import {
 } from './src/utils/codeGenerators';
 import { runAutoLayout } from './src/utils/autoLayout';
 import { SAMPLE_SCHEMAS } from './src/utils/sampleSchemas';
+import { calculateTableStorage, calculateDatabaseStorage } from './src/utils/storageMath';
+import { runSchemaAudit, applyAuditFix } from './src/utils/schemaAudit';
 import { SchemaModel, Table, Column, Relationship } from './src/types/schema';
 
 let passed = 0;
@@ -275,7 +277,11 @@ async function runTests() {
     targetTableId: 'tbl_products_custom',
     targetColumnId: 'c1',
     cardinality: '1:N',
+    sourceEnd: 'crows-foot',
+    targetEnd: 'one',
     name: 'fk_inventory_products',
+    onDelete: 'CASCADE',
+    onUpdate: 'RESTRICT',
   };
   const withRelationSchema: SchemaModel = {
     ...withTableSchema,
@@ -283,11 +289,151 @@ async function runTests() {
     relationships: [newRelation],
   };
   testAssert(withRelationSchema.relationships.length === 1, 'Canvas State: wired 1:N relationship connector between tables');
+  testAssert(withRelationSchema.relationships[0].sourceEnd === 'crows-foot', 'Canvas Visual Ends: sourceEnd configured as Crow\'s foot');
+  testAssert(withRelationSchema.relationships[0].targetEnd === 'one', 'Canvas Visual Ends: targetEnd configured as Exactly One (||)');
 
-  // 4.4 Auto-Layout Calculation
+  // 4.4 Canvas Relationship Editing Options
+  // User edits cardinality to 1:1 and updates connection ends
+  const editedRelation: Relationship = {
+    ...newRelation,
+    cardinality: '1:1',
+    sourceEnd: 'one',
+    targetEnd: 'one',
+    onDelete: 'SET NULL',
+  };
+  const withEditedRelationSchema: SchemaModel = {
+    ...withRelationSchema,
+    relationships: [editedRelation],
+  };
+  testAssert(withEditedRelationSchema.relationships[0].cardinality === '1:1', 'Canvas Edit: user updated cardinality to 1:1');
+  testAssert(withEditedRelationSchema.relationships[0].sourceEnd === 'one', 'Canvas Edit: user updated source connection end to One (||)');
+  testAssert(withEditedRelationSchema.relationships[0].onDelete === 'SET NULL', 'Canvas Edit: user updated ON DELETE to SET NULL');
+
+  // User swaps relationship direction
+  const swappedRelation: Relationship = {
+    ...editedRelation,
+    sourceTableId: editedRelation.targetTableId,
+    sourceColumnId: editedRelation.targetColumnId,
+    targetTableId: editedRelation.sourceTableId,
+    targetColumnId: editedRelation.sourceColumnId,
+    cardinality: '1:N',
+    sourceEnd: 'crows-foot',
+    targetEnd: 'one',
+  };
+  testAssert(swappedRelation.sourceTableId === 'tbl_products_custom', 'Canvas Edit: user swapped relationship direction (source is now products)');
+  testAssert(swappedRelation.targetTableId === 'tbl_inventory_custom', 'Canvas Edit: user swapped relationship direction (target is now inventory)');
+
+  // 4.5 Auto-Layout Calculation
   const laidOutSchema = runAutoLayout(withRelationSchema);
   testAssert(laidOutSchema.tables[0].position.x !== undefined && laidOutSchema.tables[0].position.y !== undefined, 'Auto-Layout: computed valid 2D coordinates for table 1');
   testAssert(laidOutSchema.tables[1].position.x !== undefined && laidOutSchema.tables[1].position.y !== undefined, 'Auto-Layout: computed valid 2D coordinates for table 2');
+
+  // --- PART 5: SENIOR DATABASE ENGINEER STORAGE MATH & AUDIT ENGINE ---
+  console.log('\n--- 5. Testing Storage Math & Senior DB Engineer Audit Engine ---');
+
+  // 5.1 Storage Math: PostgreSQL Row & Page Sizing
+  const pgUsersTable = baseSchema.tables.find(t => t.name === 'users')!;
+  const pgStorage = calculateTableStorage(pgUsersTable, 'postgres');
+  testAssert(pgStorage.avgRowBytes > 24, 'Storage Math: PG users table accounts for 24-byte tuple header');
+  testAssert(pgStorage.rowsPer8KPage > 10, 'Storage Math: computes realistic rows per 8KB page (>10 rows/page)');
+  testAssert(pgStorage.projections.rows1m.totalMB > 0, 'Storage Math: computes 1M row disk footprint projection');
+  testAssert(!pgStorage.exceedsPageLimit, 'Storage Math: normal PG table does not exceed page limit');
+
+  // 5.2 Storage Math: MSSQL Unicode NVARCHAR Doubling & 8,060B Limit Check
+  const mssqlWideTable: Table = {
+    id: 'tbl_mssql_wide',
+    name: 'wide_documents',
+    position: { x: 0, y: 0 },
+    columns: [
+      { id: 'w1', name: 'id', type: 'uniqueidentifier', isPrimaryKey: true, isForeignKey: false, isNullable: false, isUnique: true },
+      { id: 'w2', name: 'content', type: 'nvarchar(4000)', isPrimaryKey: false, isForeignKey: false, isNullable: false, isUnique: false },
+      { id: 'w3', name: 'summary', type: 'nvarchar(2000)', isPrimaryKey: false, isForeignKey: false, isNullable: false, isUnique: false },
+    ],
+  };
+  const mssqlStorage = calculateTableStorage(mssqlWideTable, 'mssql');
+  testAssert(mssqlStorage.maxRowBytes > 8060, 'Storage Math: detects wide MSSQL table exceeding 8,060-byte in-row page limit');
+  testAssert(mssqlStorage.exceedsPageLimit === true, 'Storage Math: sets exceedsPageLimit flag to true');
+
+  // 5.3 Schema Audit: Anti-Pattern Detection
+  const flawedSchema: SchemaModel = {
+    id: 'flawed_schema',
+    name: 'Flawed Schema',
+    dialect: 'mssql',
+    tables: [
+      {
+        id: 'tbl_broken_orders',
+        name: 'orders',
+        position: { x: 0, y: 0 },
+        columns: [
+          // Missing primary key!
+          // Unindexed foreign key!
+          { id: 'c_user', name: 'user_id', type: 'uniqueidentifier', isPrimaryKey: false, isForeignKey: true, isNullable: false, isUnique: false },
+          // Floating point monetary column!
+          { id: 'c_price', name: 'price', type: 'float', isPrimaryKey: false, isForeignKey: false, isNullable: false, isUnique: false },
+        ],
+      },
+      {
+        id: 'tbl_mssql_guid',
+        name: 'accounts',
+        position: { x: 100, y: 100 },
+        columns: [
+          // Random GUID clustered PK
+          { id: 'c_acc_id', name: 'id', type: 'uniqueidentifier', isPrimaryKey: true, isForeignKey: false, isNullable: false, isUnique: true, defaultValue: 'NEWID()' },
+          { id: 'c_name', name: 'name', type: 'nvarchar(100)', isPrimaryKey: false, isForeignKey: false, isNullable: false, isUnique: false },
+        ],
+      },
+    ],
+    relationships: [
+      {
+        id: 'rel_ord_usr',
+        sourceTableId: 'tbl_broken_orders',
+        sourceColumnId: 'c_user',
+        targetTableId: 'tbl_mssql_guid',
+        targetColumnId: 'c_acc_id',
+        cardinality: '1:N',
+      },
+    ],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+
+  const auditReport = runSchemaAudit(flawedSchema);
+  testAssert(auditReport.score < 90, 'Schema Audit: scores flawed schema under 90%');
+  testAssert(auditReport.issues.some(i => i.id.startsWith('missing_pk::')), 'Schema Audit: detected missing Primary Key on orders');
+  testAssert(auditReport.issues.some(i => i.id.startsWith('unindexed_fk::')), 'Schema Audit: detected unindexed foreign key orders.user_id');
+  testAssert(auditReport.issues.some(i => i.id.startsWith('inexact_money::')), 'Schema Audit: detected floating point price column');
+  testAssert(auditReport.issues.some(i => i.id.startsWith('mssql_guid_frag::')), 'Schema Audit: detected MSSQL random GUID clustered PK fragmentation');
+
+  // 5.4 One-Click Automated Remediation (applyAuditFix)
+  const missingPkIssue = auditReport.issues.find(i => i.id.startsWith('missing_pk::'))!;
+  const fixedPkSchema = applyAuditFix(flawedSchema, missingPkIssue.id);
+  const fixedOrdersTable = fixedPkSchema.tables.find(t => t.name === 'orders')!;
+  testAssert(fixedOrdersTable.columns.some(c => c.isPrimaryKey), 'Auto-Fix: successfully added primary key column');
+
+  const unindexedFkIssue = auditReport.issues.find(i => i.id.startsWith('unindexed_fk::'))!;
+  const fixedFkSchema = applyAuditFix(fixedPkSchema, unindexedFkIssue.id);
+  const fixedFkCol = fixedFkSchema.tables.find(t => t.name === 'orders')!.columns.find(c => c.name === 'user_id')!;
+  testAssert(fixedFkCol.isIndexed === true, 'Auto-Fix: successfully flagged foreign key as indexed');
+
+  const moneyIssue = auditReport.issues.find(i => i.id.startsWith('inexact_money::'))!;
+  const fixedMoneySchema = applyAuditFix(fixedFkSchema, moneyIssue.id);
+  const fixedMoneyCol = fixedMoneySchema.tables.find(t => t.name === 'orders')!.columns.find(c => c.name === 'price')!;
+  testAssert(fixedMoneyCol.type.includes('decimal'), 'Auto-Fix: successfully converted float to decimal(18,2)');
+
+  const guidIssue = auditReport.issues.find(i => i.id.startsWith('mssql_guid_frag::'))!;
+  const fixedGuidSchema = applyAuditFix(fixedMoneySchema, guidIssue.id);
+  const fixedGuidCol = fixedGuidSchema.tables.find(t => t.name === 'accounts')!.columns.find(c => c.isPrimaryKey)!;
+  testAssert(fixedGuidCol.defaultValue === 'NEWSEQUENTIALID()', 'Auto-Fix: successfully updated default to NEWSEQUENTIALID()');
+
+  const reAuditedReport = runSchemaAudit(fixedGuidSchema);
+  testAssert(reAuditedReport.score > auditReport.score, 'Auto-Fix: overall health score improved after 1-click remediation');
+
+  // 5.5 Code Generator Indexes
+  const pgIndexedDDL = generatePostgres(fixedGuidSchema);
+  testAssert(pgIndexedDDL.includes('CREATE INDEX IF NOT EXISTS "idx_orders_user_id"'), 'Code Generator: produces CREATE INDEX for indexed FK columns in Postgres');
+
+  const mssqlIndexedDDL = generateMSSQL(fixedGuidSchema);
+  testAssert(mssqlIndexedDDL.includes('CREATE NONCLUSTERED INDEX [IX_orders_user_id]'), 'Code Generator: produces CREATE NONCLUSTERED INDEX for indexed columns in MSSQL');
 
   console.log('\n====================================================');
   console.log(`🏁 FINAL VERIFICATION SUMMARY: ${passed} PASSED, ${failed} FAILED`);

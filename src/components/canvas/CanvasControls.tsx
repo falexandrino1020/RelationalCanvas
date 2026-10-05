@@ -9,6 +9,7 @@ interface CanvasControlsProps {
   onFitView: () => void;
   onAutoLayout: () => void;
   onAddTable: () => void;
+  onAddRelationship?: () => void;
 }
 
 export const CanvasControls: React.FC<CanvasControlsProps> = ({
@@ -19,6 +20,7 @@ export const CanvasControls: React.FC<CanvasControlsProps> = ({
   onFitView,
   onAutoLayout,
   onAddTable,
+  onAddRelationship,
 }) => {
   return (
     <div className="absolute bottom-6 left-6 z-30 flex items-center gap-1.5 p-1.5 bg-[#111827]/90 backdrop-blur-md border border-slate-800 rounded-xl shadow-2xl">
@@ -30,6 +32,17 @@ export const CanvasControls: React.FC<CanvasControlsProps> = ({
         <Plus className="w-3.5 h-3.5" />
         <span>Add Table</span>
       </button>
+
+      {onAddRelationship && (
+        <button
+          onClick={onAddRelationship}
+          className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-cyan-300 rounded-lg text-xs font-semibold border border-slate-700 hover:border-cyan-500/50 shadow-sm transition-colors mr-1"
+          title="Create or configure a relationship between tables"
+        >
+          <span className="text-sm font-mono leading-none">⤚</span>
+          <span>Add Relation</span>
+        </button>
+      )}
 
       <div className="h-4 w-px bg-slate-800 mx-0.5" />
 

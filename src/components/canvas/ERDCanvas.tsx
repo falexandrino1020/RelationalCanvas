@@ -4,6 +4,7 @@ import { TableCard } from './TableCard';
 import { RelationshipLines } from './RelationshipLines';
 import { CanvasControls } from './CanvasControls';
 import { MiniMap } from './MiniMap';
+import { RelationshipModal } from '../modals/RelationshipModal';
 import { runAutoLayout } from '../../utils/autoLayout';
 import { Database, FolderOpen, Upload, Plus } from 'lucide-react';
 
@@ -37,6 +38,11 @@ export const ERDCanvas: React.FC<ERDCanvasProps> = ({
     sourceColumnId: string;
     currentMousePos: { x: number; y: number };
   } | null>(null);
+
+  const [selectedRelId, setSelectedRelId] = useState<string | null>(null);
+  const [editingRel, setEditingRel] = useState<Relationship | null>(null);
+  const [isRelationshipModalOpen, setIsRelationshipModalOpen] = useState(false);
+  const [newRelSourcePrefill, setNewRelSourcePrefill] = useState<{ tableId?: string; columnId?: string } | null>(null);
 
   const [canvasDimensions, setCanvasDimensions] = useState({ width: 1200, height: 800 });
 
@@ -216,8 +222,12 @@ export const ERDCanvas: React.FC<ERDCanvasProps> = ({
         targetTableId,
         targetColumnId,
         cardinality: sourceCol.isUnique ? '1:1' : '1:N',
+        sourceEnd: sourceCol.isUnique ? 'one' : 'crows-foot',
+        targetEnd: 'one',
         name: `${sourceTable.name}_${sourceCol.name}_fk`,
       };
+
+      setSelectedRelId(newRel.id);
 
       onUpdateSchema({
         ...schema,
@@ -229,6 +239,104 @@ export const ERDCanvas: React.FC<ERDCanvasProps> = ({
     setActiveConnection(null);
   };
 
+  const handleEditRelationship = (relId: string) => {
+    const rel = schema.relationships.find(r => r.id === relId);
+    if (rel) {
+      setEditingRel(rel);
+      setSelectedRelId(rel.id);
+      setIsRelationshipModalOpen(true);
+    }
+  };
+
+  const handleEditColumnRelationship = (tableId: string, columnId: string) => {
+    // Check if column is source or target of an existing relationship
+    const existing = schema.relationships.find(
+      r => (r.sourceTableId === tableId && r.sourceColumnId === columnId) ||
+           (r.targetTableId === tableId && r.targetColumnId === columnId)
+    );
+
+    if (existing) {
+      setEditingRel(existing);
+      setSelectedRelId(existing.id);
+      setIsRelationshipModalOpen(true);
+    } else {
+      setEditingRel(null);
+      setNewRelSourcePrefill({ tableId, columnId });
+      setIsRelationshipModalOpen(true);
+    }
+  };
+
+  const handleOpenAddRelationship = (sourceTableId?: string, sourceColumnId?: string) => {
+    setEditingRel(null);
+    setNewRelSourcePrefill(sourceTableId ? { tableId: sourceTableId, columnId: sourceColumnId } : null);
+    setIsRelationshipModalOpen(true);
+  };
+
+  const handleSwapRelationship = (relId: string) => {
+    const rel = schema.relationships.find(r => r.id === relId);
+    if (!rel) return;
+
+    const swappedCardinality = rel.cardinality === '1:N' ? 'N:1' : rel.cardinality === 'N:1' ? '1:N' : rel.cardinality;
+    const swappedRel: Relationship = {
+      ...rel,
+      sourceTableId: rel.targetTableId,
+      sourceColumnId: rel.targetColumnId,
+      targetTableId: rel.sourceTableId,
+      targetColumnId: rel.sourceColumnId,
+      sourceEnd: rel.targetEnd || 'one',
+      targetEnd: rel.sourceEnd || 'crows-foot',
+      cardinality: swappedCardinality,
+    };
+
+    handleSaveRelationship(swappedRel);
+  };
+
+  const handleSaveRelationship = (savedRel: Relationship) => {
+    const existingIndex = schema.relationships.findIndex(r => r.id === savedRel.id);
+
+    // Sync foreign key column metadata in tables
+    const sourceTable = schema.tables.find(t => t.id === savedRel.sourceTableId);
+    const targetTable = schema.tables.find(t => t.id === savedRel.targetTableId);
+    const sourceCol = sourceTable?.columns.find(c => c.id === savedRel.sourceColumnId);
+    const targetCol = targetTable?.columns.find(c => c.id === savedRel.targetColumnId);
+
+    const updatedTables = schema.tables.map(t => {
+      // If table is source, mark column as foreign key referencing target
+      if (t.id === savedRel.sourceTableId && targetTable && targetCol) {
+        return {
+          ...t,
+          columns: t.columns.map(c => c.id === savedRel.sourceColumnId ? {
+            ...c,
+            isForeignKey: true,
+            references: {
+              targetTableId: targetTable.id,
+              targetColumnId: targetCol.id,
+              targetTableName: targetTable.name,
+              targetColumnName: targetCol.name,
+            },
+          } : c),
+        };
+      }
+      return t;
+    });
+
+    let updatedRelationships: Relationship[];
+    if (existingIndex >= 0) {
+      updatedRelationships = [...schema.relationships];
+      updatedRelationships[existingIndex] = savedRel;
+    } else {
+      updatedRelationships = [...schema.relationships, savedRel];
+    }
+
+    onUpdateSchema({
+      ...schema,
+      tables: updatedTables,
+      relationships: updatedRelationships,
+    });
+
+    setSelectedRelId(savedRel.id);
+  };
+
   const handleDeleteRelationship = (relId: string) => {
     const rel = schema.relationships.find(r => r.id === relId);
     if (!rel) return;
@@ -236,14 +344,19 @@ export const ERDCanvas: React.FC<ERDCanvasProps> = ({
     // Unmark foreign key if no other relation uses it
     const updatedTables = schema.tables.map(t => {
       if (t.id === rel.sourceTableId) {
-        return {
-          ...t,
-          columns: t.columns.map(c => c.id === rel.sourceColumnId ? {
-            ...c,
-            isForeignKey: false,
-            references: undefined,
-          } : c),
-        };
+        const otherUses = schema.relationships.some(
+          r => r.id !== relId && r.sourceTableId === rel.sourceTableId && r.sourceColumnId === rel.sourceColumnId
+        );
+        if (!otherUses) {
+          return {
+            ...t,
+            columns: t.columns.map(c => c.id === rel.sourceColumnId ? {
+              ...c,
+              isForeignKey: false,
+              references: undefined,
+            } : c),
+          };
+        }
       }
       return t;
     });
@@ -253,6 +366,10 @@ export const ERDCanvas: React.FC<ERDCanvasProps> = ({
       tables: updatedTables,
       relationships: schema.relationships.filter(r => r.id !== relId),
     });
+
+    if (selectedRelId === relId) {
+      setSelectedRelId(null);
+    }
   };
 
   const handleUpdateTable = (updatedTable: Table) => {
@@ -401,6 +518,10 @@ export const ERDCanvas: React.FC<ERDCanvasProps> = ({
           relationships={schema.relationships}
           tables={schema.tables}
           activeConnection={activeConnection}
+          selectedRelId={selectedRelId}
+          onSelectRelationship={setSelectedRelId}
+          onEditRelationship={handleEditRelationship}
+          onSwapRelationship={handleSwapRelationship}
           onDeleteRelationship={handleDeleteRelationship}
         />
 
@@ -419,6 +540,7 @@ export const ERDCanvas: React.FC<ERDCanvasProps> = ({
               onStartConnection={handleStartConnection}
               onCompleteConnection={handleCompleteConnection}
               onDragStart={handleDragStartTable}
+              onEditColumnRelationship={handleEditColumnRelationship}
             />
           ))}
         </div>
@@ -482,6 +604,7 @@ export const ERDCanvas: React.FC<ERDCanvasProps> = ({
         onFitView={handleFitView}
         onAutoLayout={handleAutoLayout}
         onAddTable={() => handleAddTable()}
+        onAddRelationship={schema.tables.length >= 2 ? () => handleOpenAddRelationship() : undefined}
       />
 
       {/* Floating Spatial Mini-Map */}
@@ -492,6 +615,24 @@ export const ERDCanvas: React.FC<ERDCanvasProps> = ({
         canvasHeight={canvasDimensions.height}
         onNavigate={(x, y) => setViewport(prev => ({ ...prev, x, y }))}
       />
+
+      {/* Interactive Relationship Editor / Creator Modal */}
+      {isRelationshipModalOpen && (
+        <RelationshipModal
+          isOpen={isRelationshipModalOpen}
+          onClose={() => {
+            setIsRelationshipModalOpen(false);
+            setEditingRel(null);
+            setNewRelSourcePrefill(null);
+          }}
+          tables={schema.tables}
+          relationship={editingRel}
+          defaultSourceTableId={newRelSourcePrefill?.tableId}
+          defaultSourceColumnId={newRelSourcePrefill?.columnId}
+          onSave={handleSaveRelationship}
+          onDelete={handleDeleteRelationship}
+        />
+      )}
     </div>
   );
 };

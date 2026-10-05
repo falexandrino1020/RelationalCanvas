@@ -1,6 +1,0 @@
-{
-  "summary":  "Updated implementation plan for RelationalCanvas to include first-class Microsoft SQL Server (MSSQL / T-SQL) dialect support, MSSQL-specific data types, and syntax handling alongside PostgreSQL, MySQL, SQLite, DBML, and Mermaid.",
-  "updatedAt":  "2026-10-05T18:10:06.253851812Z",
-  "requestFeedback":  true,
-  "userFacing":  true
-}
